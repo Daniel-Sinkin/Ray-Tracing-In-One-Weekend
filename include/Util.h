@@ -2,6 +2,7 @@
 #define UTIL_H
 
 #include "Constants.h"
+#include "color.h"
 
 class interval {
 public:
@@ -133,6 +134,77 @@ public:
         }
 
         return hitAnything;
+    }
+};
+
+class Camera {
+public:
+    float m_AspectRatio = 1.0;
+    int m_ImageWidth = 100;
+
+    void render(const Model &world) {
+        initialize();
+
+        std::cout << "P3\n"
+                  << image_width << ' ' << mImageHeight << "\n255\n";
+
+        for (int j = 0; j < mImageHeight; j++) {
+            std::clog << "\rScanlines remaining: " << (mImageHeight - j) << ' ' << std::flush;
+            for (int i = 0; i < image_width; i++) {
+                auto pixel_center = m_PixelOrigin + (vec3((float)i) * m_PixelDeltaU) + (vec3((float)j) * m_PixelDeltaV);
+                auto ray_direction = pixel_center - m_Center;
+                Ray r(m_Center, ray_direction);
+
+                color pixel_color = ray_color(r, world);
+                write_color(std::cout, pixel_color);
+            }
+        }
+
+        std::clog << "\rDone.                 \n";
+    }
+
+private:
+    int mImageHeight;
+    point3 m_Center;
+    point3 m_PixelOrigin; // pixel00_loc
+    vec3 m_PixelDeltaU;
+    vec3 m_PixelDeltaV;
+
+    void initialize() {
+        mImageHeight = int(image_width / m_AspectRatio);
+        mImageHeight = (mImageHeight < 1) ? 1 : mImageHeight;
+
+        m_Center = point3(0, 0, 0);
+
+        // Determine viewport dimensions.
+        float focal_length = 1.0f;
+        float viewport_height = 2.0f;
+        float viewport_width = viewport_height * (float(image_width) / mImageHeight);
+
+        // Calculate the vectors across the horizontal and down the vertical viewport edges.
+        vec3 viewportU = vec3(viewport_width, 0, 0);
+        vec3 viewportV = vec3(0, -viewport_height, 0);
+
+        // Calculate the horizontal and vertical delta vectors from pixel to pixel.
+        m_PixelDeltaU = viewportU / vec3((float)image_width);
+        m_PixelDeltaV = viewportV / vec3((float)mImageHeight);
+
+        // Calculate the location of the upper left pixel.
+        auto viewport_upper_left = m_Center - vec3(0.0f, 0.0f, focal_length) - viewportU / vec3(2.0f) - viewportV / vec3(2.0f);
+        m_PixelOrigin = viewport_upper_left + 0.5f * (m_PixelDeltaU + m_PixelDeltaV);
+    }
+
+    color ray_color(const Ray &r, const Model &world) const {
+        HitRecord rec;
+        if (world.hit(r, interval(0, infinity_f32), rec)) {
+            return 0.5f * (rec.n + WHITE);
+        }
+
+        vec3 nu = glm::normalize(r.getDir());
+
+        auto a = 0.5f * (nu.y + 1.0f);
+
+        return (1.0f - a) * WHITE + a * color(0.5f, 0.7f, 1.0f);
     }
 };
 
