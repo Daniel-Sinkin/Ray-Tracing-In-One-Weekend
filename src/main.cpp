@@ -1,29 +1,16 @@
 #include "Constants.h"
+#include "Util.h"
 #include "color.h"
 
-DEF hit_sphere(const point3 &center, float radius, const Ray &r) -> optional<float> {
-    vec3 oc = center - r.getOrigin();
-    float a = glm::dot(r.getDir(), r.getDir());
-    float h = glm::dot(r.getDir(), oc);
-    float c = glm::dot(oc, oc) - radius * radius;
-    float discriminant = h * h - a * c;
-    if (discriminant < 0) return std::nullopt;
-
-    return (h - std::sqrt(discriminant)) / a;
-}
-
-DEF ray_color(const Ray &r) -> vec3 {
-    auto t = hit_sphere(point3(0.0f, 0.0f, -1.0f), 0.5f, r);
-    if (t && *t > 0.0f) {
-        vec3 N = glm::normalize(r.at(*t) - CAMERA_FORWARD);
-        auto retval = 0.5f * color(N.x + 1.0f, N.y + 1.0f, N.z + 1.0f);
-
-        return retval;
+DEF rayColor(const Ray &r, const ModelList &world) -> vec3 {
+    HitRecord rec;
+    if (world.hit(r, interval(0, infinity_f32), rec)) {
+        return 0.5f * (rec.n + WHITE);
     }
 
-    vec3 direction_n = r.getDir() / glm::length(r.getDir());
-    float lambda = 0.5f * float(direction_n.y + 1.0f);
-    return vec3(1.0f - lambda) * vec3(1.0f, 1.0f, 1.0f) + vec3(lambda) * vec3(0.5f, 0.7f, 1.0f);
+    vec3 nu = r.getDir() / vec3(glm::length(r.getDir()));
+    auto a = 0.5f * (nu.y + 1.0f);
+    return (1 - a) * WHITE + a * color(0.5, 0.7, 1.0);
 }
 
 DEF main() -> int {
@@ -33,6 +20,10 @@ DEF main() -> int {
     // Calculate the image height, and ensure that it's at least 1.
     size_t image_height = (size_t)(image_width / aspect_ratio);
     image_height = (image_height < 1) ? 1 : image_height;
+
+    ModelList world;
+    world.add(make_shared<Sphere>(point3(0, 0, -1), 0.5));
+    world.add(make_shared<Sphere>(point3(0, -100.5, -1), 100));
 
     auto focal_length = 1.0f;
     auto viewport_height = 2.0f;
@@ -58,8 +49,7 @@ DEF main() -> int {
             auto ray_direction = pixel_center - camera_center;
             Ray r(camera_center, ray_direction);
 
-            vec3 pixel_color = ray_color(r);
-            write_color(std::cout, pixel_color);
+            write_color(std::cout, rayColor(r, world));
         }
     }
 
