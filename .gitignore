@@ -35,3 +35,6 @@
 build
 
 .vscode
+
+# Most recently rendered image
+image.ppm 
