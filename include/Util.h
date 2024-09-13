@@ -2,7 +2,6 @@
 #define UTIL_H
 
 #include "Constants.h"
-#include "color.h"
 
 class Interval {
 public:
@@ -36,10 +35,20 @@ public:
 const Interval Interval::empty = Interval(+infinity_f32, -infinity_f32);
 const Interval Interval::universe = Interval(-infinity_f32, +infinity_f32);
 
+inline float linearToGamma(float linearComponent) {
+    if (linearComponent > 0.0f) return std::sqrt(linearComponent);
+    return 0.0f;
+}
+
 void writeColor(std::ostream &out, const color &pixel_color) {
     float r = pixel_color.x;
     float g = pixel_color.y;
     float b = pixel_color.z;
+
+    // gamma transform with gamma = 2
+    r = linearToGamma(r);
+    g = linearToGamma(g);
+    b = linearToGamma(b);
 
     static const Interval intensity(0.0f, 1 - 1e-3f);
     int rbyte = int(256.0f * intensity.clamp(r));
@@ -161,6 +170,7 @@ public:
     float m_AspectRatio = 16.0f / 9.0f;
     int m_ImageWidth = 800;
     int m_SamplesPerPixel = 100;
+    int m_MaxDepth = 50;
 
     void render(const Model &world) {
         initialize();
@@ -174,7 +184,7 @@ public:
                 color pixelColor = BLACK;
                 for (int sample = 0; sample < m_SamplesPerPixel; sample++) {
                     Ray r = getRay(i, j);
-                    pixelColor += rayColor(r, world);
+                    pixelColor += rayColor(r, m_MaxDepth, world);
                 }
                 writeColor(std::cout, m_PixelSamplesScale * pixelColor);
             }
@@ -229,15 +239,17 @@ private:
         return vec3(random_float() - 0.5f, random_float() - 0.5f, 0.0f);
     }
 
-    color rayColor(const Ray &r, const Model &world) const {
+    color rayColor(const Ray &r, int depth, const Model &world) const {
+        if (depth <= 0) return BLACK;
+
         HitRecord rec;
-        if (world.hit(r, Interval(0, infinity_f32), rec)) {
-            return 0.5f * (rec.n + WHITE);
+        if (world.hit(r, Interval(SHADOW_ACNE_FIX_FACTOR, infinity_f32), rec)) {
+            vec3 direction = rec.n + random_vec3_n();
+            return 0.5f * rayColor(Ray(rec.p, direction), depth - 1, world);
         }
 
         vec3 nu = glm::normalize(r.getDir());
-
-        auto a = 0.5f * (nu.y + 1.0f);
+        auto a = 0.9f * (nu.y + 1.0f);
         return (1.0f - a) * WHITE + a * color(0.5f, 0.7f, 1.0f);
     }
 };

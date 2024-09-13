@@ -1,6 +1,5 @@
 #include "Constants.h"
 #include "Util.h"
-#include "color.h"
 
 int main() {
     ModelList world;
