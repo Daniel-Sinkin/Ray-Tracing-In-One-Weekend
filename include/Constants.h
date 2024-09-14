@@ -1,5 +1,4 @@
-#ifndef CONSTANTS_H
-#define CONSTANTS_H
+#pragma once
 
 #include <cmath>
 #include <cstdlib>
@@ -75,5 +74,3 @@ inline vec3 refract(const vec3 &uv, const vec3 &n, float etai_over_etat) {
     vec3 r_out_parallel = -vec3(std::sqrt(std::fabs(1.0 - glm::dot(r_out_perp, r_out_perp)))) * n;
     return r_out_perp + r_out_parallel;
 }
-
-#endif // CONSTANTS_H

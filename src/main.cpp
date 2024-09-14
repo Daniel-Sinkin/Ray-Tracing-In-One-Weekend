@@ -1,5 +1,6 @@
 #include "Constants.h"
 #include "Util.h"
+#include "camera.h"
 
 int main() {
     ModelList world;
