@@ -38,3 +38,5 @@ build
 
 # Most recently rendered image
 image.ppm 
+
+.DS_Store

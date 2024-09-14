@@ -8,9 +8,17 @@
 class Camera {
 public:
     float m_AspectRatio = 16.0f / 9.0f;
-    int m_ImageWidth = 800;
-    int m_SamplesPerPixel = 100;
-    int m_MaxDepth = 50;
+    int m_ImageWidth = 100;
+    int m_SamplesPerPixel = 10;
+    int m_MaxDepth = 10;
+
+    float m_VFOV = 20.0f;
+    point3 m_Eye = ORIGIN;
+    point3 m_Center = CAMERA_FORWARD;
+    vec3 m_Up = WORLDSPACE_UP;
+
+    float m_DOFAngle = 0.0f;
+    float m_FocusDistance = 0.0f;
 
     void render(const Model &world) {
         initialize();
@@ -31,7 +39,7 @@ public:
                 color pixelColor = BLACK;
                 for (int sample = 0; sample < m_SamplesPerPixel; sample++) {
                     Ray r = getRay(i, j);
-                    pixelColor += rayColor(r, m_MaxDepth, world);
+                    pixelColor += this->rayColor(r, m_MaxDepth, world);
                 }
                 writeColor(std::cout, m_PixelSamplesScale * pixelColor);
             }
@@ -42,7 +50,7 @@ public:
 
             // Estimate remaining time
             int remainingScanlines = m_ImageHeight - (j + 1); // Subtract 1 because j is 0-based
-            double estimatedRemainingTime = scanlineDuration.count() * remainingScanlines;
+            float estimatedRemainingTime = scanlineDuration.count() * remainingScanlines;
 
             // Print the time taken for the previous scanline and estimate remaining time
             std::clog << " (Previous scanline took " << scanlineDuration.count() << " seconds)"
@@ -59,10 +67,13 @@ public:
 private:
     int m_ImageHeight;
     float m_PixelSamplesScale;
-    point3 m_Center;
     point3 m_PixelOrigin; // pixel00_loc
     vec3 m_PixelDeltaU;
     vec3 m_PixelDeltaV;
+    vec3 m_U, m_V, m_W;
+
+    vec3 m_DOFDiskU; // Horizontal radius
+    vec3 m_DOFDiskV; // Vertical Radius
 
     void initialize() {
         m_ImageHeight = int(m_ImageWidth / m_AspectRatio);
@@ -70,36 +81,49 @@ private:
 
         m_PixelSamplesScale = 1.0f / m_SamplesPerPixel;
 
-        m_Center = ORIGIN;
-
-        float focal_length = 1.0f;
-        float viewport_height = 2.0f;
+        vec3 lookDirection = m_Eye - m_Center;
+        float theta = degrees_to_radians(m_VFOV);
+        float h = std::tan(theta / 2.0f);
+        float viewport_height = 2.0f * h * m_FocusDistance;
         float viewport_width = viewport_height * (float(m_ImageWidth) / m_ImageHeight);
 
-        vec3 viewportU = vec3(viewport_width, 0, 0);
-        vec3 viewportV = vec3(0, -viewport_height, 0);
+        m_W = glm::normalize(lookDirection);
+        m_U = glm::normalize(glm::cross(m_Up, m_W));
+        m_V = glm::cross(m_W, m_U);
+
+        vec3 viewportU = vec3(viewport_width) * m_U;
+        vec3 viewportV = vec3(viewport_height) * (-m_V);
 
         // Calculate the horizontal and vertical delta vectors from pixel to pixel.
         m_PixelDeltaU = viewportU / vec3((float)m_ImageWidth);
         m_PixelDeltaV = viewportV / vec3((float)m_ImageHeight);
 
         // Calculate the location of the upper left pixel.
-        auto viewport_upper_left = m_Center - vec3(0.0f, 0.0f, focal_length) - viewportU / vec3(2.0f) - viewportV / vec3(2.0f);
+        auto viewport_upper_left = m_Eye - (vec3(m_FocusDistance) * m_W) - viewportU / vec3(2.0f) - viewportV / vec3(2.0f);
         m_PixelOrigin = viewport_upper_left + 0.5f * (m_PixelDeltaU + m_PixelDeltaV);
+
+        auto DOFRadius = m_FocusDistance * std::tan(degrees_to_radians(m_DOFAngle / 2.0f));
+        m_DOFDiskU = m_U * vec3(DOFRadius);
+        m_DOFDiskV = m_V * vec3(DOFRadius);
     }
 
     Ray getRay(int i, int j) {
-        auto offset = sampleSquare();
+        auto offset = this->sampleSquare();
         auto pixelSample = m_PixelOrigin + (i + offset.x) * m_PixelDeltaU + (j + offset.y) * m_PixelDeltaV;
 
-        auto rayOrigin = m_Center;
+        auto rayOrigin = (m_DOFAngle <= 0.0f) ? m_Eye : this->sampleDOFDisk();
         auto rayDirection = pixelSample - rayOrigin;
 
         return Ray(rayOrigin, rayDirection);
     }
 
     vec3 sampleSquare() const {
-        return vec3(random_float() - 0.5f, random_float() - 0.5f, 0.0f);
+        return vec3(randomFloat() - 0.5f, randomFloat() - 0.5f, 0.0f);
+    }
+
+    point3 sampleDOFDisk() const {
+        point3 p = randomInUnitDisk();
+        return m_Eye + (p.x * m_DOFDiskU) + (p.y * m_DOFDiskV);
     }
 
     color rayColor(const Ray &r, int depth, const Model &world) const {
@@ -110,7 +134,7 @@ private:
             Ray scattered;
             color attenuation;
             if (hitRecord.material->scatter(r, hitRecord, attenuation, scattered)) {
-                return attenuation * rayColor(scattered, depth - 1, world);
+                return attenuation * this->rayColor(scattered, depth - 1, world);
             }
             return BLACK;
         }
