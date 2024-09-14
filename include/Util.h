@@ -137,23 +137,39 @@ private:
 
 class DialectricMaterial : public Material {
 public:
-    DialectricMaterial(float refraction_index) : refraction_index(refraction_index) {}
+    DialectricMaterial(float refraction_index) : refractionIndexBase(refraction_index) {}
 
     bool scatter(const Ray &r_in, const HitRecord &hitRecord, color &attenuation, Ray &scattered) const override {
         attenuation = WHITE;
-        double ri = hitRecord.isFrontFace ? (1.0 / refraction_index) : refraction_index;
+        float ri = hitRecord.isFrontFace ? (1.0f / refractionIndexBase) : refractionIndexBase;
 
         vec3 unit_direction = glm::normalize(r_in.getDir());
-        vec3 refracted = refract(unit_direction, hitRecord.n, ri);
+        float cos_theta = std::fmin(glm::dot(-unit_direction, hitRecord.n), 1.0f);
+        float sin_theta = std::sqrt(1.0f - cos_theta * cos_theta);
 
-        scattered = Ray(hitRecord.p, refracted);
+        bool cannot_refract = ri * sin_theta > 1.0f;
+        vec3 direction;
+
+        if (cannot_refract || reflectance(cos_theta, ri) > random_float()) {
+            direction = reflect(unit_direction, hitRecord.n);
+        } else {
+            direction = refract(unit_direction, hitRecord.n, ri);
+        }
+
+        scattered = Ray(hitRecord.p, direction);
         return true;
     }
 
 private:
     // Refractive index in vacuum or air, or the ratio of the material's refractive index over
     // the refractive index of the enclosing media
-    double refraction_index;
+    float refractionIndexBase;
+
+    static float reflectance(float cosine, float refractionIndex) {
+        float r0 = (1 - refractionIndex) / (1 + refractionIndex);
+        r0 = r0 * r0;
+        return r0 + (1 - r0) * std::pow(1.0f - cosine, 5);
+    }
 };
 
 class Model {
@@ -240,11 +256,18 @@ public:
     void render(const Model &world) {
         initialize();
 
+        // Start total timer
+        auto totalStartTime = std::chrono::high_resolution_clock::now();
+
         std::cout << "P3\n"
                   << m_ImageWidth << ' ' << m_ImageHeight << "\n255\n";
 
         for (int j = 0; j < m_ImageHeight; j++) {
+            // Start timing the scanline
+            auto startTime = std::chrono::high_resolution_clock::now();
+
             std::clog << "\rScanlines remaining: " << (m_ImageHeight - j) << ' ' << std::flush;
+
             for (int i = 0; i < m_ImageWidth; i++) {
                 color pixelColor = BLACK;
                 for (int sample = 0; sample < m_SamplesPerPixel; sample++) {
@@ -253,9 +276,25 @@ public:
                 }
                 writeColor(std::cout, m_PixelSamplesScale * pixelColor);
             }
+
+            // End timing the scanline
+            auto endTime = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> scanlineDuration = endTime - startTime;
+
+            // Estimate remaining time
+            int remainingScanlines = m_ImageHeight - (j + 1); // Subtract 1 because j is 0-based
+            double estimatedRemainingTime = scanlineDuration.count() * remainingScanlines;
+
+            // Print the time taken for the previous scanline and estimate remaining time
+            std::clog << " (Previous scanline took " << scanlineDuration.count() << " seconds)"
+                      << " | Estimated time remaining: " << estimatedRemainingTime << " seconds." << std::flush;
         }
 
-        std::clog << "\rDone.                 \n";
+        // End total timer and calculate the total duration
+        auto totalEndTime = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> totalRenderDuration = totalEndTime - totalStartTime;
+
+        std::clog << std::flush << "\rDone. Total render time: " << totalRenderDuration.count() << " seconds.\n";
     }
 
 private:

@@ -6,12 +6,14 @@ int main() {
 
     auto materialGround = make_shared<LambertianMaterial>(color(0.8f, 0.8f, 0.0f));
     auto materialCenter = make_shared<LambertianMaterial>(color(0.1f, 0.2f, 0.5f));
-    auto materialLeft = make_shared<DialectricMaterial>(1.50);
+    auto materialLeft = make_shared<DialectricMaterial>(1.5f);
+    auto materialBubble = make_shared<DialectricMaterial>(1.00 / 1.5f);
     auto materialRight = make_shared<MetalMaterial>(color(0.8f, 0.6f, 0.2f), 1.0f);
 
     world.add(make_shared<Sphere>(point3(0.0f, -100.5f, -1.0f), 100.0f, materialGround));
     world.add(make_shared<Sphere>(point3(0.0f, 0.0f, -1.2f), 0.5f, materialCenter));
     world.add(make_shared<Sphere>(point3(-1.0f, 0.0f, -1.0f), 0.5f, materialLeft));
+    world.add(make_shared<Sphere>(point3(-1.0f, 0.0f, -1.0f), 0.4f, materialBubble));
     world.add(make_shared<Sphere>(point3(1.0f, 0.0f, -1.0f), 0.5f, materialRight));
 
     Camera camera;
