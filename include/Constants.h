@@ -26,7 +26,7 @@ constexpr float infinity_f32 = std::numeric_limits<float>::infinity();
 
 constexpr float pi = 3.1415926535897932385f;
 
-constexpr float SHADOW_ACNE_FIX_FACTOR = 1e-3f;
+constexpr float SHADOW_ACNE_FIX_THRESHOLD = 1e-3f;
 
 constexpr vec3 CAMERA_FORWARD = vec3(0.0f, 0.0f, -1.0f);
 
@@ -63,6 +63,17 @@ inline vec3 random_vec3_n() {
 inline vec3 randomOnHemisphere(const vec3 &n) {
     vec3 sample = random_vec3_n();
     return glm::dot(sample, n) > 0.0f ? sample : -sample;
+}
+
+inline vec3 reflect(const vec3 &v, const vec3 &n) {
+    return v - vec3(2.0f * glm::dot(v, n)) * n;
+}
+
+inline vec3 refract(const vec3 &uv, const vec3 &n, float etai_over_etat) {
+    auto cos_theta = std::fmin(dot(-uv, n), 1.0f);
+    vec3 r_out_perp = etai_over_etat * (uv + cos_theta * n);
+    vec3 r_out_parallel = -vec3(std::sqrt(std::fabs(1.0 - glm::dot(r_out_perp, r_out_perp)))) * n;
+    return r_out_perp + r_out_parallel;
 }
 
 #endif // CONSTANTS_H

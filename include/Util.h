@@ -81,9 +81,11 @@ private:
     vec3 m_Dir;
 };
 
+class Material;
 struct HitRecord {
     point3 p;
     vec3 n;
+    shared_ptr<Material> material;
     float t;
     bool isFrontFace;
 
@@ -91,6 +93,67 @@ struct HitRecord {
         isFrontFace = glm::dot(r.getDir(), outwardNormal) < 0.0f;
         n = isFrontFace ? outwardNormal : -outwardNormal;
     }
+};
+class Material {
+public:
+    virtual ~Material() = default;
+
+    virtual bool scatter(const Ray &rIn, const HitRecord &hitRecord, color &attenuation, Ray &scattered) const { return false; }
+};
+
+class LambertianMaterial : public Material {
+public:
+    LambertianMaterial(const color &albedo) : albedo(albedo) {}
+
+    bool scatter(const Ray &rIn, const HitRecord &hitRecord, color &attenuation, Ray &scattered) const override {
+        auto scatterDirection = hitRecord.n + random_vec3_n();
+        if (scatterDirection.length() < 1e-8) scatterDirection = hitRecord.n;
+
+        scattered = Ray(hitRecord.p, scatterDirection);
+        attenuation = albedo;
+        return true;
+    }
+
+private:
+    color albedo;
+};
+
+class MetalMaterial : public Material {
+public:
+    MetalMaterial(const color &albedo, float fuzz) : albedo(albedo), fuzz(fuzz < 1 ? fuzz : 1) {}
+
+    bool scatter(const Ray &rIn, const HitRecord &hitRecord, color &attenuation, Ray &scattered) const override {
+        vec3 reflected = reflect(rIn.getDir(), hitRecord.n);
+        reflected = glm::normalize(reflected) + (fuzz * random_vec3_n());
+        scattered = Ray(hitRecord.p, reflected);
+        attenuation = albedo;
+        return (glm::dot(scattered.getDir(), hitRecord.n) > 0);
+    }
+
+private:
+    color albedo;
+    float fuzz;
+};
+
+class DialectricMaterial : public Material {
+public:
+    DialectricMaterial(float refraction_index) : refraction_index(refraction_index) {}
+
+    bool scatter(const Ray &r_in, const HitRecord &hitRecord, color &attenuation, Ray &scattered) const override {
+        attenuation = WHITE;
+        double ri = hitRecord.isFrontFace ? (1.0 / refraction_index) : refraction_index;
+
+        vec3 unit_direction = glm::normalize(r_in.getDir());
+        vec3 refracted = refract(unit_direction, hitRecord.n, ri);
+
+        scattered = Ray(hitRecord.p, refracted);
+        return true;
+    }
+
+private:
+    // Refractive index in vacuum or air, or the ratio of the material's refractive index over
+    // the refractive index of the enclosing media
+    double refraction_index;
 };
 
 class Model {
@@ -101,13 +164,13 @@ public:
 
 class Sphere : public Model {
 public:
-    Sphere(const point3 &center, float radius) : center(center), radius(std::fmax(0, radius)) {}
+    Sphere(const point3 &center, float radius, shared_ptr<Material> material) : m_Center(center), m_Radius(std::fmax(0, radius)), m_Material(material) {}
 
     bool hit(const Ray &r, Interval ray_t, HitRecord &hitRecord) const override {
-        vec3 oc = center - r.getOrigin();
+        vec3 oc = m_Center - r.getOrigin();
         auto a = glm::dot(r.getDir(), r.getDir());
         auto h = glm::dot(r.getDir(), oc);
-        auto c = glm::dot(oc, oc) - radius * radius;
+        auto c = glm::dot(oc, oc) - m_Radius * m_Radius;
 
         auto discriminant = h * h - a * c;
         if (discriminant < 0)
@@ -124,15 +187,17 @@ public:
 
         hitRecord.t = root;
         hitRecord.p = r.at(hitRecord.t);
-        vec3 outwardNormal = (hitRecord.p - center) / vec3(radius);
+        vec3 outwardNormal = (hitRecord.p - m_Center) / vec3(m_Radius);
         hitRecord.setFaceNormal(r, outwardNormal);
+        hitRecord.material = m_Material;
 
         return true;
     }
 
 private:
-    point3 center;
-    float radius;
+    point3 m_Center;
+    float m_Radius;
+    shared_ptr<Material> m_Material;
 };
 
 class ModelList : public Model {
@@ -242,14 +307,18 @@ private:
     color rayColor(const Ray &r, int depth, const Model &world) const {
         if (depth <= 0) return BLACK;
 
-        HitRecord rec;
-        if (world.hit(r, Interval(SHADOW_ACNE_FIX_FACTOR, infinity_f32), rec)) {
-            vec3 direction = rec.n + random_vec3_n();
-            return 0.5f * rayColor(Ray(rec.p, direction), depth - 1, world);
+        HitRecord hitRecord;
+        if (world.hit(r, Interval(SHADOW_ACNE_FIX_THRESHOLD, infinity_f32), hitRecord)) {
+            Ray scattered;
+            color attenuation;
+            if (hitRecord.material->scatter(r, hitRecord, attenuation, scattered)) {
+                return attenuation * rayColor(scattered, depth - 1, world);
+            }
+            return BLACK;
         }
 
         vec3 nu = glm::normalize(r.getDir());
-        auto a = 0.9f * (nu.y + 1.0f);
+        float a = 0.9f * (nu.y + 1.0f);
         return (1.0f - a) * WHITE + a * color(0.5f, 0.7f, 1.0f);
     }
 };
